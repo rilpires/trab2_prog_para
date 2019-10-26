@@ -1,4 +1,5 @@
 #include <iostream>
+#include <cstdlib>
 #include <omp.h>
 using namespace std;
 
