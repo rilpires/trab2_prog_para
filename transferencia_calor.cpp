@@ -3,10 +3,9 @@
 #include <vector>
 #include <cstring>
 #include <cstdlib>
+#include <unistd.h>
 
 using namespace std;
-
-enum {INCREASING , DECREASING};
 
 struct heat_point {
     int x;
@@ -15,68 +14,42 @@ struct heat_point {
     heat_point( float temperature , int x=0 , int y=0 ):x(x),y(y),temperature(temperature){}
 };
 
-void print_matrix( float* matrix , size_t w , size_t h ){
-    cout << "==== MATRIX =====" << endl;
-    for( size_t y = 0 ; y < w ; y++ )
-    {
-        for( size_t x = 0 ; x < w ; x++ )
-            cout << matrix[x + y*w] << "\t";
-        cout << endl;
-    }
-    cout << "===============" << endl;
-}
-
 float   ALPHA           = 0.2;
 size_t  MATRIX_SIZE     = 1024;
 float   INITIAL_TEMP    = 20;
 float   BORDER_TEMP     = 30;
 size_t  MAX_STEPS       = 1024;
-size_t  BLOCK_SIZE      = 17;
+size_t  BLOCK_SIZE      = 16;
 vector<heat_point> heat_points;
 
-void sor_step( float** matrix_block , size_t current_step , size_t next_step , 
-    size_t matrix_width , size_t matrix_height , 
-    int initial_y , int final_y , 
-    short increasing_or_decreasing , size_t last_step ,
-    vector<heat_point>& heat_points )
+void sor_step( float*& current_matrix , float* next_matrix , size_t matrix_width , size_t matrix_height , 
+    int initial_y , int final_y , vector<heat_point>& heat_points )
 {
 
-    //cout << "stesp: " << current_step << "->" << next_step << endl;
-    //cout << "last_step: " << last_step << endl;
-    
     float BETA = ((1.0-ALPHA)/4);
-    float* current_matrix = matrix_block[current_step];
-    float* next_matrix = matrix_block[next_step];
     
-    initial_y = max( 1,initial_y);
-    final_y = min( int(matrix_height-1) , final_y);
-    final_y = max(final_y,initial_y+1);
-    // cout << initial_y << "," << final_y << " [" << omp_get_thread_num() << "]" << endl;
+    if( initial_y <= 0 ) initial_y = 1;
+    if( final_y >= matrix_height ) final_y = matrix_height-1;
 
     // Set temperature in each point a heat_point exists
     for( vector<heat_point>::iterator it = heat_points.begin() ; it != heat_points.end() ; it++ ){
-        int y = it->y;
-        if( y >= initial_y && y < final_y )
-            current_matrix[it->x+y*matrix_height] = it->temperature;
+        heat_point& hp = *it;
+        if(hp.y >= initial_y && hp.y < final_y) current_matrix[ (hp.x) + (hp.y)*matrix_width ] = it->temperature;
     }
-
-    for( int y = initial_y ; y < final_y ; y++ )
-    for( int x = 1 ; x < matrix_width-1 ; x++ ){
-        next_matrix[x+y*matrix_width] = current_matrix[x+y*matrix_width]*ALPHA + BETA*(current_matrix[x+(y+1)*matrix_width]+current_matrix[x+(y-1)*matrix_width]+current_matrix[x+1+y*matrix_width]+current_matrix[x-1+y*matrix_width]);
-    }
-    
-    if( next_step < last_step ){
-        if( increasing_or_decreasing == INCREASING ){
-            {
-                sor_step( matrix_block , next_step , next_step + 1 , matrix_width , matrix_height , initial_y-1 , final_y+1 , INCREASING , last_step , heat_points );
-            }
-        } else if( increasing_or_decreasing == DECREASING ) {
-            {
-                sor_step( matrix_block , next_step , next_step + 1 , matrix_width , matrix_height , initial_y+1 , final_y-1 , DECREASING , last_step , heat_points );
-            }
+    for( int y = initial_y ; y < final_y ; y++ ){
+        int temp_1 = (y-1)*matrix_width;
+        int temp_2 = y*matrix_width;
+        int temp_3 = (y+1)*matrix_width;
+        for( int x = 1 ; x < matrix_width-1 ; x++ ){
+            next_matrix[x+temp_2] = current_matrix[x+temp_2]*ALPHA + BETA*(current_matrix[x+temp_3]+current_matrix[x+temp_1]+current_matrix[x+1+temp_2]+current_matrix[x-1+temp_2]);
         }
     }
-
+    // Set temperature in each point a heat_point exists for the next matrix
+    for( vector<heat_point>::iterator it = heat_points.begin() ; it != heat_points.end() ; it++ ){
+        heat_point& hp = *it;
+        if(hp.y >= initial_y && hp.y < final_y) next_matrix[ (hp.x) + (hp.y)*matrix_width ] = it->temperature;
+    }
+    
 }
 
 int main( int argc , char** argv ){
@@ -99,7 +72,7 @@ int main( int argc , char** argv ){
     
     cout << "Numero de threads: " << num_threads << endl;
     
-    heat_points.push_back( heat_point(100,8,8) );
+    heat_points.push_back( heat_point(100,800,800) );
     
     // Allocating memory to be used
     float**  mat_block = new float*[BLOCK_SIZE];
@@ -128,6 +101,7 @@ int main( int argc , char** argv ){
     // Running until MAX_STEPS of SOR
     double initial_t = omp_get_wtime();
     
+    //num_threads = 4;
     #pragma omp parallel
     {
         #pragma omp master
@@ -136,39 +110,37 @@ int main( int argc , char** argv ){
             {
                 size_t max_block_steps = min( BLOCK_SIZE-1 , MAX_STEPS-step );
 
+                #pragma omp taskloop
                 for( int t = 0 ; t < num_threads ; t++ ){
-                    #pragma omp task
-                    {
-                        int initial_y = MATRIX_SIZE * (float(t)/num_threads);
-                        int final_y   = MATRIX_SIZE * (float(t+1)/num_threads);
-                        size_t last_step = max_block_steps;
-                        sor_step( mat_block , 0 , 1 , MATRIX_SIZE , MATRIX_SIZE , initial_y , final_y , DECREASING , last_step , heat_points );
+                    int initial_y = 1 + (MATRIX_SIZE-2) * (float(t)/num_threads);
+                    int final_y   = 1 + (MATRIX_SIZE-2) * (float(t+1)/num_threads);
+                    for( int i = 0 ; i < max_block_steps ; i++ ){
+                        sor_step( mat_block[i] , mat_block[i+1] , MATRIX_SIZE , MATRIX_SIZE , initial_y+i , final_y-i ,heat_points );
                     }
                 }
                 #pragma omp taskwait
 
+                #pragma omp taskloop
                 for( int t = 0 ; t < num_threads+1 ; t++ ){
-                    #pragma omp task
-                    {
-                        int initial_y = MATRIX_SIZE * ( float(t) / (num_threads+1) );
-                        int final_y = initial_y+1;
-                        size_t last_step = max_block_steps;
-                        sor_step( mat_block , 0 , 1 , MATRIX_SIZE , MATRIX_SIZE , initial_y , final_y , INCREASING , last_step , heat_points );
+                    int center_y = MATRIX_SIZE * ( float(t) / (num_threads) ) ;
+                    int initial_y = center_y-1;
+                    int final_y = center_y+1;
+                    for( int i = 0 ; i < max_block_steps-1 ; i++ ){
+                        sor_step( mat_block[i+1] , mat_block[i+2] , MATRIX_SIZE , MATRIX_SIZE , initial_y-i , final_y+i ,heat_points );
                     }
                 }
                 #pragma omp taskwait
-
-                for( int t = 0 ; t < num_threads+1 ; t++ ){
-                    int initial_y = MATRIX_SIZE * (float(t)/num_threads);
-                    int final_y   = MATRIX_SIZE * (float(t+1)/num_threads);
-                    memcpy( (mat_block[0])+initial_y , (mat_block[max_block_steps])+initial_y , sizeof(float)*MATRIX_SIZE*(final_y-initial_y) );
-                }
-                #pragma omp taskwait
+                
+                memcpy( mat_block[0] , mat_block[max_block_steps] , sizeof(float)*MATRIX_SIZE*MATRIX_SIZE );
             }
         }
     }
-    cout << "Tempo: " << omp_get_wtime() - initial_t << " segundos. "; 
-    cout << "Ponto(8,8) deve estar 63.9926: " << mat_block[0][7+MATRIX_SIZE*7] << endl;
+    cout << "Tempo: " << omp_get_wtime() - initial_t << " segundos. " << endl; 
+    cout << "Ponto(30,30) deve estar 20.9939: " << (mat_block[0])[30+MATRIX_SIZE*30] << endl;
+    cout << "Ponto(999,999) deve estar 21.3097: " << (mat_block[0])[999+MATRIX_SIZE*999] << endl;
+    cout << "Ponto(795,788) deve estar 31.1361: " << (mat_block[0])[795+MATRIX_SIZE*788] << endl;
+    cout << "Ponto(799,800) deve estar 73.7359: " << (mat_block[0])[799+MATRIX_SIZE*800] << endl;
+    cout << "Ponto(799,799) deve estar 66.5616: " << (mat_block[0])[799+MATRIX_SIZE*799] << endl;
 
     for( int b = 0 ; b < BLOCK_SIZE ; b++ )
         delete[] mat_block[b];
