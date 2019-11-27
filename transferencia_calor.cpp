@@ -14,7 +14,7 @@ struct heat_point {
     heat_point( float temperature , int x=0 , int y=0 ):x(x),y(y),temperature(temperature){}
 };
 
-float   ALPHA           = 0.2;
+float   ALPHA           = 0.0;
 size_t  MATRIX_SIZE     = 1024;
 float   INITIAL_TEMP    = 20;
 float   BORDER_TEMP     = 30;
