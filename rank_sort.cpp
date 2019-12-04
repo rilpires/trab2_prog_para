@@ -4,13 +4,9 @@
 using namespace std;
 
 /**
- *
- * Para rodar o programa:
- * g++ rank_sort.cpp -o rank_sort -fopenmp
- * ./rank_sort VECTOR_SIZE [NUM_THREADS]
- * 
+ * Compilar com :      g++ rank_sort.cpp -o rank_sort -fopenmp
+ * Executar com :      ./rank_sort VECTOR_SIZE [NUM_THREADS]
 **/
-
 
 void rank_sort( int* v , size_t v_size , int num_threads = 1){
     int* sorted_v = new int[v_size]();

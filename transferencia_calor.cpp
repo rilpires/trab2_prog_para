@@ -5,6 +5,11 @@
 #include <cstdlib>
 #include <unistd.h>
 
+/**
+ * Compilar com:        g++ -fopenpm transferencia_calor.cpp -o transferencia_calor -O3
+ * Executar com:        ./transferencia_calor [NUM_THREADS]
+**/
+
 using namespace std;
 
 struct heat_point {
