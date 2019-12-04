@@ -37,21 +37,23 @@ int conta_primos( int N , int num_threads = 1 ){
     #pragma omp parallel shared(soma_uns) private(j)
     {
         #pragma omp single
-        for( i=13 ; i<sqrtN ; i+=2 ){
-            // Achou um primo, 'i'
-            if(crivo[i]==0){
-                // Preenche o crivo ate sqrtN
-                for( j=2*i ; j<sqrtN ; j+=i )
-                    crivo[j]=1;
-                // O resto dos valores a serem preenchidos
-                #pragma omp task
-                {
-                    for( ; j<N+1 ; j+=i )
+        {
+            for( i=13 ; i<sqrtN ; i+=2 ){
+                // Achou um primo, 'i'
+                if(crivo[i]==0){
+                    // Preenche o crivo ate sqrtN
+                    for( j=2*i ; j<sqrtN ; j+=i )
                         crivo[j]=1;
+                    // O resto dos valores a serem preenchidos
+                    #pragma omp task
+                    {
+                        for( ; j<N+1 ; j+=i )
+                            crivo[j]=1;
+                    }
                 }
             }
         }
-
+        
         #pragma omp taskwait
         #pragma omp for reduction(+:soma_uns)
         for( i= 2 ; i<N+1 ; i++ )
