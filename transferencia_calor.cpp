@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <unistd.h>
 
+
 /**
  * Compilar com:        g++ -fopenpm transferencia_calor.cpp -o transferencia_calor -O3
  * Executar com:        ./transferencia_calor [NUM_THREADS]
@@ -58,22 +59,15 @@ void sor_step( float*& current_matrix , float* next_matrix , size_t matrix_width
 }
 
 int main( int argc , char** argv ){
-    
     size_t num_threads = 1;
     if( argc > 1 ){
         num_threads = atoi(argv[1]);
         omp_set_num_threads(num_threads);
     }
     else
-    {
-        #pragma omp parallel
-        {
-            #pragma omp single
-            {
-                num_threads = omp_get_num_threads();
-            }
-        }
-    }
+    #pragma omp parallel
+    #pragma omp single
+        num_threads = omp_get_num_threads();
     
     cout << "Numero de threads: " << num_threads << endl;
     
@@ -115,23 +109,29 @@ int main( int argc , char** argv ){
             {
                 size_t max_block_steps = min( BLOCK_SIZE-1 , MAX_STEPS-step );
 
-                #pragma omp taskloop
+                // Não existe taskloop na versão OMP do tesla !!!
                 for( int t = 0 ; t < num_threads ; t++ ){
-                    int initial_y = 1 + (MATRIX_SIZE-2) * (float(t)/num_threads);
-                    int final_y   = 1 + (MATRIX_SIZE-2) * (float(t+1)/num_threads);
-                    for( int i = 0 ; i < max_block_steps ; i++ ){
-                        sor_step( mat_block[i] , mat_block[i+1] , MATRIX_SIZE , MATRIX_SIZE , initial_y+i , final_y-i ,heat_points );
+                    #pragma omp task
+                    {
+                        int initial_y = 1 + (MATRIX_SIZE-2) * (float(t)/num_threads);
+                        int final_y   = 1 + (MATRIX_SIZE-2) * (float(t+1)/num_threads);
+                        for( int i = 0 ; i < max_block_steps ; i++ ){
+                            sor_step( mat_block[i] , mat_block[i+1] , MATRIX_SIZE , MATRIX_SIZE , initial_y+i , final_y-i ,heat_points );
+                        }
                     }
                 }
                 #pragma omp taskwait
 
-                #pragma omp taskloop
+                // Não existe taskloop na versão OMP do tesla !!!
                 for( int t = 0 ; t < num_threads+1 ; t++ ){
-                    int center_y = MATRIX_SIZE * ( float(t) / (num_threads) ) ;
-                    int initial_y = center_y-1;
-                    int final_y = center_y+1;
-                    for( int i = 0 ; i < max_block_steps-1 ; i++ ){
-                        sor_step( mat_block[i+1] , mat_block[i+2] , MATRIX_SIZE , MATRIX_SIZE , initial_y-i , final_y+i ,heat_points );
+                    #pragma omp task
+                    {
+                        int center_y = MATRIX_SIZE * ( float(t) / (num_threads) ) ;
+                        int initial_y = center_y-1;
+                        int final_y = center_y+1;
+                        for( int i = 0 ; i < max_block_steps-1 ; i++ ){
+                            sor_step( mat_block[i+1] , mat_block[i+2] , MATRIX_SIZE , MATRIX_SIZE , initial_y-i , final_y+i ,heat_points );
+                        }
                     }
                 }
                 #pragma omp taskwait
@@ -140,12 +140,13 @@ int main( int argc , char** argv ){
             }
         }
     }
+
     cout << "Tempo: " << omp_get_wtime() - initial_t << " segundos. " << endl; 
-    cout << "Ponto(30,30) deve estar 20.9939: " << (mat_block[0])[30+MATRIX_SIZE*30] << endl;
-    cout << "Ponto(999,999) deve estar 21.3097: " << (mat_block[0])[999+MATRIX_SIZE*999] << endl;
-    cout << "Ponto(795,788) deve estar 31.1361: " << (mat_block[0])[795+MATRIX_SIZE*788] << endl;
-    cout << "Ponto(799,800) deve estar 73.7359: " << (mat_block[0])[799+MATRIX_SIZE*800] << endl;
-    cout << "Ponto(799,799) deve estar 66.5616: " << (mat_block[0])[799+MATRIX_SIZE*799] << endl;
+    cout << "Ponto(30,30) deve estar 21.277: " << (mat_block[0])[30+MATRIX_SIZE*30] << endl;
+    cout << "Ponto(999,999) deve estar 21.5509: " << (mat_block[0])[999+MATRIX_SIZE*999] << endl;
+    cout << "Ponto(795,788) deve estar 32.4487: " << (mat_block[0])[795+MATRIX_SIZE*788] << endl;
+    cout << "Ponto(799,799) deve estar 67.3064: " << (mat_block[0])[799+MATRIX_SIZE*799] << endl;
+    cout << "Ponto(799,800) deve estar 74.3187: " << (mat_block[0])[799+MATRIX_SIZE*800] << endl;
 
     for( int b = 0 ; b < BLOCK_SIZE ; b++ )
         delete[] mat_block[b];
